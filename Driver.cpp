@@ -1,56 +1,47 @@
 #include "header.hpp"
 
-
-void configure_motor_pins(int en_pin, int inA_pin, int inB_pin){
+void configure_motor_pins(uint8_t en_pin, uint8_t in1_pin, uint8_t in2_pin) {
     pinMode(en_pin, OUTPUT);
-    pinMode(inA_pin, OUTPUT);
-    pinMode(inB_pin, OUTPUT);
+    pinMode(in1_pin, OUTPUT);
+    pinMode(in2_pin, OUTPUT);
 }
 
-
-void set_motor(int en_pin, int inA_pin, int inB_pin, int speed, MotorDirection direction){
+void set_motor(uint8_t en_pin, uint8_t in1_pin, uint8_t in2_pin, uint8_t speed, MotorDirection dir) {
     analogWrite(en_pin, speed);
-
-    switch (direction) {
-        case FORWARD:
-            digitalWrite(inA_pin, LOW);
-            digitalWrite(inB_pin, HIGH);
-            break;
-
-        case BACKWARD:
-            digitalWrite(inA_pin, HIGH);
-            digitalWrite(inB_pin, LOW);
-            break;
-
-        case RELEASE:
-        default: 
-            digitalWrite(inA_pin, LOW);
-            digitalWrite(inB_pin, LOW);
-            break;
-    }
-}
-
-void turn_motor(int ena, int in1, int in2, int enb, int in3, int in4, int speed, MotorDirection direction)
-{
-    switch (direction)
-    {
-    case LEFT:
-        // Left motor goes BACKWARD, right motor goes FORWARD
-        set_motor(ena, in1, in2, speed, BACKWARD);
-        set_motor(enb, in3, in4, speed, FORWARD);
-        break;
     
-    case RIGHT:
-        // Left motor goes FORWARD, right motor goes BACKWARD
-        set_motor(ena, in1, in2, speed, FORWARD);
-        set_motor(enb, in3, in4, speed, BACKWARD);
-        break;
-
-    default:
-        // Stop both motors if any other direction is passed
-        set_motor(ena, in1, in2, 0, RELEASE);
-        set_motor(enb, in3, in4, 0, RELEASE);
-        break;
+    if (dir == FORWARD) {
+        digitalWrite(in1_pin, HIGH);
+        digitalWrite(in2_pin, LOW);
+    } else if (dir == BACKWARD) {
+        digitalWrite(in1_pin, LOW);
+        digitalWrite(in2_pin, HIGH);
+    } else {
+        digitalWrite(in1_pin, LOW);
+        digitalWrite(in2_pin, LOW);
     }
 }
 
+void drive_robot(uint8_t ena, uint8_t in1, uint8_t in2, uint8_t enb, uint8_t in3, uint8_t in4, uint8_t speed, MotorDirection direction) {
+    switch(direction) {
+        case FORWARD:
+            set_motor(ena, in1, in2, speed, FORWARD);
+            set_motor(enb, in3, in4, speed, FORWARD);
+            break;
+        case BACKWARD:
+            set_motor(ena, in1, in2, speed, BACKWARD);
+            set_motor(enb, in3, in4, speed, BACKWARD);
+            break;
+        case LEFT:
+            set_motor(ena, in1, in2, speed, BACKWARD);
+            set_motor(enb, in3, in4, speed, FORWARD);
+            break;
+        case RIGHT:
+            set_motor(ena, in1, in2, speed, FORWARD);
+            set_motor(enb, in3, in4, speed, BACKWARD);
+            break;
+        case RELEASE:
+            set_motor(ena, in1, in2, 0, RELEASE);
+            set_motor(enb, in3, in4, 0, RELEASE);
+            break;
+    }
+}
