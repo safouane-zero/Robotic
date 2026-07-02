@@ -1,8 +1,10 @@
 #include <Arduino.h>
+#include <Ultrasonic.h>
 
 // ============================================================
 // PIN MAP
 // ============================================================
+
 
 // InfraRed Signals
 const bool BLACK = true;
@@ -25,8 +27,16 @@ const uint8_t R12 = 13;
 const uint8_t LEFT_IR  = 2;
 const uint8_t RIGHT_IR = 6;
 
+
+
 // LDR
 const uint8_t ANALOG = A3;
+
+// Ultrasonic
+const uint8_t ULTRA_SONIC_ECHO = A0;
+const uint8_t ULTRA_SONIC_TRIG = A2;
+
+Ultrasonic ultrasonic(ULTRA_SONIC_TRIG, ULTRA_SONIC_ECHO);
 
 // ============================================================
 // TYPES
@@ -36,14 +46,15 @@ const uint8_t ANALOG = A3;
 // pattern you don't set stays NONE by default.
 
 enum Move : uint8_t {
-    NONE = 0,   // undefined -> loop() does nothing -> robot keeps last move
+    NONE = 0,
     FORWARD,
     BACKWARD,
     LEFT,
     RIGHT,
     HARD_LEFT,
     HARD_RIGHT,
-    STOP
+    STOP,
+    ULTRA
 };
 
 struct IRCase {
@@ -106,7 +117,7 @@ void init_table() {
     table[0b00111] = {RIGHT, 150};
     table[0b11100] = {LEFT, 150};
     table[0b11111] = {STOP, 0};
-
+    table[0b00000] = {ULTRA, 0};
 }
 
 // ============================================================
@@ -128,11 +139,28 @@ void setup() {
     delay(3000);
 }
 
+bool ultrasonic_flag = true;
+uint8_t dir = 0;
 void loop() {
     uint8_t ir = read_ir_pattern();
     IRCase c = table[ir];
+    unsigned int ultrasonic_distance = ultrasonic.read();
 
-    if (c.move != NONE) {
+
+    if (c.move == ULTRA && ultrasonic_distance < 12) {
+        if (ultrasonic_distance >= 6 && ultrasonic_distance <= 9) {
+            move_forward(120);
+        }
+        else if (ultrasonic_distance > 9) {
+            turn_left(100);
+            // dir = 1;
+        } 
+        else if (ultrasonic_distance < 6) {
+            turn_right(100);
+            // dir = 2;
+        }
+    }
+    else if (c.move != NONE) {
         execute_move(c.move, c.speed);
     }
     // if (c.move == 1)
@@ -149,7 +177,6 @@ void loop() {
     //     Serial.println("STOP");
     // else 
     //     Serial.println("NONE");
-
 }
 
 // ============================================================
@@ -172,6 +199,8 @@ void configure_pins() {
     pinMode(RIGHT_IR, INPUT);
 
     pinMode(ANALOG, INPUT);
+    pinMode(ULTRA_SONIC_ECHO, INPUT);
+    pinMode(ULTRA_SONIC_TRIG, OUTPUT);
 }
 
 void set_motor_forward(uint8_t en, uint8_t ina, uint8_t inb, uint8_t speed) {
@@ -246,6 +275,7 @@ void execute_move(Move move, uint8_t speed) {
         case STOP:       stop_robot();           break;
         case HARD_LEFT:  turn_hard_left(speed);  break;
         case HARD_RIGHT: turn_hard_right(speed); break;
+        default:
         case NONE:       break; // nothing to do
     }
 }
