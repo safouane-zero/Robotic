@@ -41,8 +41,8 @@ enum Move : uint8_t {
     BACKWARD,
     LEFT,
     RIGHT,
-    SOFT_LEFT,
-    SOFT_RIGHT,
+    HARD_LEFT,
+    HARD_RIGHT,
     STOP
 };
 
@@ -65,8 +65,8 @@ void move_forward(uint8_t speed);
 void move_backward(uint8_t speed);
 void turn_left(uint8_t speed);
 void turn_right(uint8_t speed);
-void turn_soft_left(uint8_t speed);
-void turn_soft_right(uint8_t speed);
+void turn_hard_left(uint8_t speed);
+void turn_hard_right(uint8_t speed);
 void stop_robot();
 uint8_t read_ir_pattern();
 void execute_move(Move move, uint8_t speed);
@@ -96,12 +96,15 @@ void loop();
 IRCase table[64] = {};
 
 void init_table() {
-    table[0b00000] = {FORWARD, 190};
-    table[0b00100] = {FORWARD, 255};
+    table[0b10000] = {HARD_LEFT, 150};
     table[0b01000] = {LEFT, 100};
+    table[0b00100] = {FORWARD, 200};
     table[0b00010] = {RIGHT,100};
-    table[0b10000] = {LEFT, 200};
-    table[0b00001] = {RIGHT, 200};
+    table[0b00001] = {HARD_RIGHT, 150};
+    table[0b11000] = {LEFT, 150};
+    table[0b00011] = {RIGHT, 150};
+    table[0b00111] = {RIGHT, 150};
+    table[0b11100] = {LEFT, 150};
     table[0b11111] = {STOP, 0};
 
 }
@@ -132,20 +135,20 @@ void loop() {
     if (c.move != NONE) {
         execute_move(c.move, c.speed);
     }
-    if (c.move == 1)
-        Serial.println("FORWARD");
-    else if (c.move == 3)
-        Serial.println("LEFT");
-    else if (c.move == 4)
-        Serial.println("RIGHT");
-    else if (c.move == 5)
-        Serial.println("SOFT_LEFT");
-    else if (c.move == 6)
-        Serial.println("SOFT_RIGHT");
-    else if (c.move == 7)
-        Serial.println("STOP");
-    else 
-        Serial.println("NONE");
+    // if (c.move == 1)
+    //     Serial.println("FORWARD");
+    // else if (c.move == 3)
+    //     Serial.println("LEFT");
+    // else if (c.move == 4)
+    //     Serial.println("RIGHT");
+    // else if (c.move == 5)
+    //     Serial.println("SOFT_LEFT");
+    // else if (c.move == 6)
+    //     Serial.println("SOFT_RIGHT");
+    // else if (c.move == 7)
+    //     Serial.println("STOP");
+    // else 
+    //     Serial.println("NONE");
 
 }
 
@@ -200,31 +203,23 @@ void move_backward(uint8_t speed) {
 }
 
 void turn_left(uint8_t speed) {
-    // set_motor_backward(ENA, IN1, IN2, speed);
     set_motor_stop(ENA, IN1, IN2);
     set_motor_forward(ENB, IN3, IN4, speed);
 }
 
 void turn_right(uint8_t speed) {
     set_motor_forward(ENA, IN1, IN2, speed);
-    // set_motor_backward(ENB, IN3, IN4, speed);
     set_motor_stop(ENB, IN3, IN4);
 }
 
-void turn_soft_left(uint8_t speed) {
-    uint16_t slow = ((uint16_t)speed * 205) >> 8;
-    uint16_t fast = ((uint16_t)speed * 307) >> 8;
-    if (fast > 255) fast = 255;
-    set_motor_forward(ENA, IN1, IN2, (uint8_t)slow);
-    set_motor_forward(ENB, IN3, IN4, (uint8_t)fast);
+void turn_hard_left(uint8_t speed) {
+    set_motor_backward(ENA, IN1, IN2, speed);
+    set_motor_forward(ENB, IN3, IN4, speed);
 }
 
-void turn_soft_right(uint8_t speed) {
-    uint16_t slow = ((uint16_t)speed * 205) >> 8;
-    uint16_t fast = ((uint16_t)speed * 307) >> 8;
-    if (fast > 255) fast = 255;
-    set_motor_forward(ENA, IN1, IN2, (uint8_t)fast);
-    set_motor_forward(ENB, IN3, IN4, (uint8_t)slow);
+void turn_hard_right(uint8_t speed) {
+    set_motor_forward(ENA, IN1, IN2, speed);
+    set_motor_backward(ENB, IN3, IN4, speed);
 }
 
 void stop_robot() {
@@ -248,9 +243,10 @@ void execute_move(Move move, uint8_t speed) {
         case BACKWARD:   move_backward(speed);   break;
         case LEFT:       turn_left(speed);       break;
         case RIGHT:      turn_right(speed);      break;
-        case SOFT_LEFT:  turn_soft_left(speed);  break;
-        case SOFT_RIGHT: turn_soft_right(speed); break;
         case STOP:       stop_robot();           break;
+        case HARD_LEFT:  turn_hard_left(speed);  break;
+        case HARD_RIGHT: turn_hard_right(speed); break;
         case NONE:       break; // nothing to do
     }
 }
+
