@@ -1,272 +1,95 @@
 #include <Arduino.h>
 #include <Ultrasonic.h>
 
-// ============================================================
-// PIN MAP
-// ============================================================
+// Left Motor (ENA=9, IN1=8, IN2=7)
+// Right Motor (ENB=3, IN3=5, IN4=4)
+// InfraRed (R9=10, R10=11, R12=12, LEFT_IR=2, RIGHT_IR=6)
 
-
-// InfraRed Signals
-const bool BLACK = true;
-const bool WHITE = false;
-
-// Left Motor
-const uint8_t ENA = 9;
-const uint8_t IN1 = 8;
-const uint8_t IN2 = 7;
-// Right Motor
-const uint8_t ENB = 3;
-const uint8_t IN3 = 5;
-const uint8_t IN4 = 4;
-
-// InfraRed sensors
-const uint8_t R9  = 10;
-const uint8_t R10 = 11;
-const uint8_t R11 = 12;
-const uint8_t R12 = 13;
-const uint8_t LEFT_IR  = 2;
-const uint8_t RIGHT_IR = 6;
-
-
-
-// LDR
-const uint8_t ANALOG = A3;
-
-// Ultrasonic
 const uint8_t ULTRA_SONIC_ECHO = A0;
-const uint8_t ULTRA_SONIC_TRIG = A2;
+const uint8_t ULTRA_SONIC_TRIG = 13;
 
 Ultrasonic ultrasonic(ULTRA_SONIC_TRIG, ULTRA_SONIC_ECHO);
 
-// ============================================================
-// TYPES
-// ============================================================
-// MOVE is just a label for "what kind of motion". NONE = 0, which
-// is what every non-listed table slot gets automatically, so any
-// pattern you don't set stays NONE by default.
-
-enum Move : uint8_t {
-    NONE = 0,
-    FORWARD,
-    BACKWARD,
-    LEFT,
-    RIGHT,
-    HARD_LEFT,
-    HARD_RIGHT,
-    STOP,
-    ULTRA
-};
+enum Move : uint8_t { NONE = 0, FORWARD, BACKWARD, LEFT, RIGHT, HARD_LEFT, HARD_RIGHT, STOP, ULTRA };
 
 struct IRCase {
     Move    move;
     uint8_t speed;
 };
 
-// ============================================================
-// FUNCTION PROTOTYPES
-// ============================================================
-// .ino files get these auto-generated for you by the Arduino IDE.
-// A plain .cpp file doesn't, so they're declared explicitly here.
-
-void configure_pins();
-void set_motor_forward(uint8_t en, uint8_t ina, uint8_t inb, uint8_t speed);
-void set_motor_backward(uint8_t en, uint8_t ina, uint8_t inb, uint8_t speed);
-void set_motor_stop(uint8_t en, uint8_t ina, uint8_t inb);
-void move_forward(uint8_t speed);
-void move_backward(uint8_t speed);
-void turn_left(uint8_t speed);
-void turn_right(uint8_t speed);
-void turn_hard_left(uint8_t speed);
-void turn_hard_right(uint8_t speed);
-void stop_robot();
-uint8_t read_ir_pattern();
-void execute_move(Move move, uint8_t speed);
-void init_table();
-void setup();
-void loop();
-
-// ============================================================
-// THE ARRAY
-// ============================================================
-// Bit layout of the IR pattern used as the index (bit5 = leftmost
-// sensor ... bit0 = rightmost sensor):
-//
-//   LEFT_IR   R12   R11   R10   R9   RIGHT_IR
-//    bit5     bit4  bit3  bit2  bit1   bit0
-//
-// 6 sensors -> 2^6 = 64 possible patterns (0x00 to 0x3F).
-//
-// This IS the lookup table: index = 6-bit IR pattern, value = {move, speed}.
-// It starts zero-initialized, meaning every slot is {NONE, 0} by default.
-// init_table() below fills in only the patterns you actually care about.
-//
-// (Note: this is filled with plain assignments rather than a single
-// initializer list because the AVR-GCC toolchain used for Uno doesn't
-// support designated initializers for array slots holding a struct.)
-
-IRCase table[64] = {};
+IRCase table[32] = {};
 
 void init_table() {
-    table[0b10000] = {HARD_LEFT, 150};
-    table[0b01000] = {LEFT, 100};
-    table[0b00100] = {FORWARD, 200};
-    table[0b00010] = {RIGHT,100};
-    table[0b00001] = {HARD_RIGHT, 150};
-    table[0b11000] = {LEFT, 150};
-    table[0b00011] = {RIGHT, 150};
-    table[0b00111] = {RIGHT, 150};
-    table[0b11100] = {LEFT, 150};
+    table[0b00100] = {FORWARD, 180};
+    table[0b10000] = {HARD_LEFT, 130};
+    table[0b00001] = {HARD_RIGHT, 130};
+    table[0b01000] = {LEFT, 130};
+    table[0b00010] = {RIGHT, 130};
+    table[0b11000] = {LEFT, 130};
+    table[0b00011] = {RIGHT, 130};
+    table[0b11100] = {LEFT, 130};
+    table[0b00111] = {RIGHT, 130};
     table[0b11111] = {STOP, 0};
     table[0b00000] = {ULTRA, 0};
 }
 
-// ============================================================
-// MAIN
-// ============================================================
-void print_ir_pattern(uint8_t pattern) {
-    Serial.print("IR Pattern: ");
-    // Loop through the 6 bits from left (bit 5) to right (bit 0)
-    for (int i = 5; i >= 0; i--) {
-        Serial.print((pattern >> i) & 1);
-    }
-    Serial.println(); // Add a new line
+// ------------------------------------------------------------
+// HIGH PERFORMANCE DIRECT PORT MANIPULATION FUNCTIONS
+// ------------------------------------------------------------
+
+inline __attribute__((always_inline)) uint8_t read_ir_pattern() {
+    // Reads directly from hardware registers PINB and PIND
+    // PD2(Left), PB4(R12), PB3(R10), PB2(R9), PD6(Right)
+    return (((PIND >> 2) & 1) << 4) | 
+           (((PINB >> 4) & 1) << 3) | 
+           (((PINB >> 3) & 1) << 2) | 
+           (((PINB >> 2) & 1) << 1) | 
+           (((PIND >> 6) & 1) << 0);
 }
 
-void setup() {
-    Serial.begin(9600);
-    configure_pins();
-    init_table();
-    delay(3000);
+inline __attribute__((always_inline)) void move_forward(uint8_t speed) {
+    PORTB &= ~(1 << 0); PORTD |= (1 << 7);  // IN1 LOW, IN2 HIGH
+    PORTD &= ~(1 << 5); PORTD |= (1 << 4);  // IN3 LOW, IN4 HIGH
+    analogWrite(9, speed); analogWrite(3, speed);
 }
 
-bool ultrasonic_flag = true;
-uint8_t dir = 0;
-void loop() {
-    uint8_t ir = read_ir_pattern();
-    IRCase c = table[ir];
-    unsigned int ultrasonic_distance = ultrasonic.read();
-
-
-    if (c.move == ULTRA && ultrasonic_distance < 12) {
-        if (ultrasonic_distance >= 6 && ultrasonic_distance <= 9) {
-            move_forward(120);
-        }
-        else if (ultrasonic_distance > 9) {
-            turn_left(100);
-            // dir = 1;
-        } 
-        else if (ultrasonic_distance < 6) {
-            turn_right(100);
-            // dir = 2;
-        }
-    }
-    else if (c.move != NONE) {
-        execute_move(c.move, c.speed);
-    }
-    // if (c.move == 1)
-    //     Serial.println("FORWARD");
-    // else if (c.move == 3)
-    //     Serial.println("LEFT");
-    // else if (c.move == 4)
-    //     Serial.println("RIGHT");
-    // else if (c.move == 5)
-    //     Serial.println("SOFT_LEFT");
-    // else if (c.move == 6)
-    //     Serial.println("SOFT_RIGHT");
-    // else if (c.move == 7)
-    //     Serial.println("STOP");
-    // else 
-    //     Serial.println("NONE");
+inline __attribute__((always_inline)) void move_backward(uint8_t speed) {
+    PORTB |= (1 << 0); PORTD &= ~(1 << 7);  // IN1 HIGH, IN2 LOW
+    PORTD |= (1 << 5); PORTD &= ~(1 << 4);  // IN3 HIGH, IN4 LOW
+    analogWrite(9, speed); analogWrite(3, speed);
 }
 
-// ============================================================
-// IMPLEMENTATION
-// ============================================================
-
-void configure_pins() {
-    pinMode(ENA, OUTPUT);
-    pinMode(IN1, OUTPUT);
-    pinMode(IN2, OUTPUT);
-    pinMode(ENB, OUTPUT);
-    pinMode(IN3, OUTPUT);
-    pinMode(IN4, OUTPUT);
-
-    pinMode(R9, INPUT);
-    pinMode(R10, INPUT);
-    pinMode(R11, INPUT);
-    pinMode(R12, INPUT);
-    pinMode(LEFT_IR, INPUT);
-    pinMode(RIGHT_IR, INPUT);
-
-    pinMode(ANALOG, INPUT);
-    pinMode(ULTRA_SONIC_ECHO, INPUT);
-    pinMode(ULTRA_SONIC_TRIG, OUTPUT);
+inline __attribute__((always_inline)) void turn_left(uint8_t speed) {
+    PORTB &= ~(1 << 0); PORTD &= ~(1 << 7); // IN1 LOW, IN2 LOW (Stop)
+    PORTD &= ~(1 << 5); PORTD |= (1 << 4);  // IN3 LOW, IN4 HIGH
+    analogWrite(9, 0); analogWrite(3, speed);
 }
 
-void set_motor_forward(uint8_t en, uint8_t ina, uint8_t inb, uint8_t speed) {
-    analogWrite(en, speed);
-    digitalWrite(ina, LOW);
-    digitalWrite(inb, HIGH);
+inline __attribute__((always_inline)) void turn_right(uint8_t speed) {
+    PORTB &= ~(1 << 0); PORTD |= (1 << 7);  // IN1 LOW, IN2 HIGH
+    PORTD &= ~(1 << 5); PORTD &= ~(1 << 4); // IN3 LOW, IN4 LOW (Stop)
+    analogWrite(9, speed); analogWrite(3, 0);
 }
 
-void set_motor_backward(uint8_t en, uint8_t ina, uint8_t inb, uint8_t speed) {
-    analogWrite(en, speed);
-    digitalWrite(ina, HIGH);
-    digitalWrite(inb, LOW);
+inline __attribute__((always_inline)) void turn_hard_left(uint8_t speed) {
+    PORTB |= (1 << 0); PORTD &= ~(1 << 7);  // IN1 HIGH, IN2 LOW
+    PORTD &= ~(1 << 5); PORTD |= (1 << 4);  // IN3 LOW, IN4 HIGH
+    analogWrite(9, speed); analogWrite(3, speed);
 }
 
-void set_motor_stop(uint8_t en, uint8_t ina, uint8_t inb) {
-    analogWrite(en, 0);
-    digitalWrite(ina, LOW);
-    digitalWrite(inb, LOW);
+inline __attribute__((always_inline)) void turn_hard_right(uint8_t speed) {
+    PORTB &= ~(1 << 0); PORTD |= (1 << 7);  // IN1 LOW, IN2 HIGH
+    PORTD |= (1 << 5); PORTD &= ~(1 << 4);  // IN3 HIGH, IN4 LOW
+    analogWrite(9, speed); analogWrite(3, speed);
 }
 
-void move_forward(uint8_t speed) {
-    set_motor_forward(ENA, IN1, IN2, speed);
-    set_motor_forward(ENB, IN3, IN4, speed);
+inline __attribute__((always_inline)) void stop_robot() {
+    PORTB &= ~(1 << 0); PORTD &= ~(1 << 7);
+    PORTD &= ~(1 << 5); PORTD &= ~(1 << 4);
+    analogWrite(9, 0); analogWrite(3, 0);
 }
 
-void move_backward(uint8_t speed) {
-    set_motor_backward(ENA, IN1, IN2, speed);
-    set_motor_backward(ENB, IN3, IN4, speed);
-}
-
-void turn_left(uint8_t speed) {
-    set_motor_stop(ENA, IN1, IN2);
-    set_motor_forward(ENB, IN3, IN4, speed);
-}
-
-void turn_right(uint8_t speed) {
-    set_motor_forward(ENA, IN1, IN2, speed);
-    set_motor_stop(ENB, IN3, IN4);
-}
-
-void turn_hard_left(uint8_t speed) {
-    set_motor_backward(ENA, IN1, IN2, speed);
-    set_motor_forward(ENB, IN3, IN4, speed);
-}
-
-void turn_hard_right(uint8_t speed) {
-    set_motor_forward(ENA, IN1, IN2, speed);
-    set_motor_backward(ENB, IN3, IN4, speed);
-}
-
-void stop_robot() {
-    set_motor_stop(ENA, IN1, IN2);
-    set_motor_stop(ENB, IN3, IN4);
-}
-
-uint8_t read_ir_pattern() {
-    uint8_t pattern = 0;
-    pattern |= (digitalRead(LEFT_IR)  == BLACK) << 4;
-    pattern |= (digitalRead(R12)      == BLACK) << 3;
-    pattern |= (digitalRead(R10)      == BLACK) << 2;
-    pattern |= (digitalRead(R9)       == BLACK) << 1;
-    pattern |= (digitalRead(RIGHT_IR) == BLACK) << 0;
-    return pattern;
-}
-
-void execute_move(Move move, uint8_t speed) {
+inline __attribute__((always_inline)) void execute_move(Move move, uint8_t speed) {
     switch (move) {
         case FORWARD:    move_forward(speed);    break;
         case BACKWARD:   move_backward(speed);   break;
@@ -275,8 +98,63 @@ void execute_move(Move move, uint8_t speed) {
         case STOP:       stop_robot();           break;
         case HARD_LEFT:  turn_hard_left(speed);  break;
         case HARD_RIGHT: turn_hard_right(speed); break;
-        default:
-        case NONE:       break; // nothing to do
+        default: break; 
     }
 }
 
+inline __attribute__((always_inline)) uint16_t read_ldr() {
+    ADMUX = (1 << REFS0) | 3;     // Set reference to AVCC and select channel ADC3 (A3)
+    ADCSRA |= (1 << ADSC);        // Start ADC conversion
+    while (ADCSRA & (1 << ADSC)); // Wait for conversion to complete (hardware clears this bit)
+    return ADC;                   // Return the 10-bit raw value (0 - 1023)
+}
+// ------------------------------------------------------------
+// MAIN
+// ------------------------------------------------------------
+
+unsigned long start = 0;
+
+void setup() {
+    DDRB |= (1 << 0) | (1 << 1);
+    DDRD |= (1 << 3) | (1 << 4) | (1 << 5) | (1 << 7);
+    
+    DDRB &= ~((1 << 2) | (1 << 3) | (1 << 4));
+    DDRD &= ~((1 << 2) | (1 << 6));
+
+    pinMode(A3, INPUT);
+    pinMode(ULTRA_SONIC_ECHO, INPUT);
+    pinMode(ULTRA_SONIC_TRIG, OUTPUT);
+
+
+    while (read_ldr() >= 90);
+
+    init_table();
+    start = millis();
+}
+
+void loop() {
+    uint8_t ir = read_ir_pattern();
+    IRCase c = table[ir];
+
+    if ((millis() - start) >= 25000 && ir == 0b11111){
+        move_forward(200);
+        delay(500);
+        stop_robot();
+        delay(10000);
+    }
+    else if (c.move == ULTRA) {
+        uint16_t ultrasonic_distance = ultrasonic.read(); 
+        
+        if (ultrasonic_distance < 12) {
+            if (ultrasonic_distance >= 6 && ultrasonic_distance <= 9) move_forward(120);
+            else if (ultrasonic_distance > 9) turn_left(100);
+            else turn_right(100);
+        }
+        else if (millis() - start >= 13000 && millis() - start <= 17000) {
+            turn_hard_right(100);
+        }
+    }
+    else if (c.move != NONE) {
+        execute_move(c.move, c.speed);
+    }
+}
